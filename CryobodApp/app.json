@@ -35,6 +35,11 @@
     "plugins": [
       "react-native-ble-plx",
       "expo-build-properties"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "28e3661f-ba5c-47f5-b4c4-474259f16680"
+      }
+    }
   }
 }
