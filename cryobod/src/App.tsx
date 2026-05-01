@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { Button } from './assets/components/ui/button'
 import { Card, CardContent } from './assets/components/ui/card'
-import { Routes, Route, useNavigate } from 'react-router-dom'
+import { Routes, Route } from 'react-router-dom'
 import Shop from './pages/Shop'
 import Contact from './pages/Contact'
 
@@ -12,11 +12,17 @@ function LandingPage() {
     useState<BluetoothRemoteGATTCharacteristic | null>(null)
   const [isConnecting, setIsConnecting] = useState(false)
   const [isSending, setIsSending] = useState(false)
+  const [temp, setTemp] = useState('-')
 
-  const deviceRef = useRef<BluetoothDevice | null>(null)
   const serverRef = useRef<BluetoothRemoteGATTServer | null>(null)
 
-  const navigate = useNavigate()
+  const handleTelemetry = (text: string) => {
+    const [key, value] = text.split('=')
+    if (!key || !value) return
+    if (key.trim() === 'TempF') {
+      setTemp(value.trim())
+    }
+  }
 
   const connectBLE = async () => {
     try {
@@ -31,11 +37,10 @@ function LandingPage() {
       setBleStatus('Requesting device...')
 
       const device = await navigator.bluetooth.requestDevice({
-        filters: [{ name: 'ESP32-Nano' }],
+        filters: [{ name: 'Nano 2' }],
         optionalServices: [0xff01],
       })
 
-      deviceRef.current = device
       setDeviceName(device.name || 'Unknown device')
       setBleStatus('Connecting...')
 
@@ -52,6 +57,17 @@ function LandingPage() {
 
       const service = await server.getPrimaryService(0xff01)
       const char = await service.getCharacteristic(0xff02)
+
+      // Auto-enable notifications right after connecting
+      char.addEventListener('characteristicvaluechanged', (event) => {
+        const target = event.target as BluetoothRemoteGATTCharacteristic
+        const value = target.value
+        if (!value) return
+        const text = new TextDecoder().decode(value)
+        console.log('BLE notify:', text)
+        handleTelemetry(text)
+      })
+      await char.startNotifications()
 
       setCharacteristic(char)
       setBleStatus('Connected')
@@ -84,15 +100,16 @@ function LandingPage() {
 
       const data = new TextEncoder().encode(cmd)
 
-      if ('writeValueWithResponse' in characteristic) {
+      if ('writeValueWithoutResponse' in characteristic) {
+        await characteristic.writeValueWithoutResponse(data)
+      } else if ('writeValueWithResponse' in characteristic) {
         await characteristic.writeValueWithResponse(data)
       } else {
         await characteristic.writeValue(data)
       }
 
       setBleStatus(`Sent: ${cmd}`)
-
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      await new Promise((resolve) => setTimeout(resolve, 150))
     } catch (error) {
       console.error(`Failed to send ${cmd}:`, error)
       const message = error instanceof Error ? error.message : 'Unknown error'
@@ -167,7 +184,7 @@ function LandingPage() {
             </Button>
           </div>
 
-          <div className="mt-4">
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row">
             <Button
               variant="outline"
               className="rounded-xl px-8"
@@ -178,10 +195,16 @@ function LandingPage() {
             </Button>
           </div>
 
-          <div className="mt-6 rounded-xl border bg-white/70 px-6 py-4 text-left shadow-sm">
-            <p><strong>Status:</strong> {bleStatus}</p>
-            <p><strong>Device:</strong> {deviceName || 'None'}</p>
-            <p><strong>Connected:</strong> {serverRef.current?.connected ? 'Yes' : 'No'}</p>
+          <div className="mt-6 grid w-full max-w-2xl gap-4 text-left sm:grid-cols-2">
+            <div className="rounded-xl border bg-white/70 px-6 py-4 shadow-sm">
+              <p><strong>Status:</strong> {bleStatus}</p>
+              <p><strong>Device:</strong> {deviceName || 'None'}</p>
+              <p><strong>Connected:</strong> {serverRef.current?.connected ? 'Yes' : 'No'}</p>
+            </div>
+
+            <div className="rounded-xl border bg-white/70 px-6 py-4 shadow-sm">
+              <p><strong>Temp:</strong> {temp} F</p>
+            </div>
           </div>
         </div>
       </section>
@@ -211,9 +234,9 @@ function LandingPage() {
 
             <Card className="rounded-2xl">
               <CardContent className="p-8">
-                <h3 className="mb-3 text-xl font-semibold">Expandable</h3>
+                <h3 className="mb-3 text-xl font-semibold">Real-time temperature</h3>
                 <p className="text-slate-600">
-                  Add sensors, speed control, and telemetry later.
+                  Live temperature readings sent directly from the ESP32 sensor.
                 </p>
               </CardContent>
             </Card>
